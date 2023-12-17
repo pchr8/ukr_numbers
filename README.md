@@ -52,3 +52,11 @@ poetry run python3 -m ukr_numbers -1 друге
 	in the worst case scenario the number itself will be
 	returned as string (2 ->'2')
 
+## Similar projects
+Both used in this package:
+- [num2words](https://github.com/savoirfairelinux/num2words)
+	- multilingual incl. Ukrainian
+	- can do inflection by case and partly by gender
+	- can't do inflections together with ordinals
+	- can't do adjectives (на ПЕРШОМУ місці)
+- [pymorphy2](https://github.com/pymorphy2/pymorphy2) does inflection
