@@ -23,6 +23,7 @@ class Numbers:
             - a number,  like 4
                 - If enabled, "-1" can be made to mean "last"
             - the inflection you need, GIVEN AS TEXT (e.g. "перший")
+                (any simple one-word number will do)
         out:
             the number inflected like the word given, like "червертий"
 
@@ -37,6 +38,8 @@ class Numbers:
     UNSUPPORTED:
         - Nouns, like 'десятка', 'десяток'
         - negative numbers, (again, except -1/last)
+        - numbers that take multiple words in Ukrainian (23 -> двадцят три) 
+            they sometimes work, sometimes don't.
 
     FAILURE CASES:
     - mainly ones where pymorphy2 has issues, e.g.
@@ -123,6 +126,9 @@ class Numbers:
 
         desc = str(desc)
 
+        if self._is_multi_word(desc):
+            raise ValueError(f"Please use a simple (<10, one-word) number for your target declension.")
+
         # Get pymorphy2 list of parsings of desc
         parsings = self.m.parse(desc)
         # Pick the best one of them
@@ -175,6 +181,10 @@ class Numbers:
                 f"Neither ADJF nor NUMR in grammemes {grammemes} for {parsing=} of {n=} {desc=} {known_grammemes=}"
             )
             return str(n)
+
+        if self._is_multi_word(base_form):
+            # TODO implement some kind of support
+            logger.error(f"Numbers with multiple words are unsupported, result will likely be wrong!")
 
         # filtering for VERB (три) etc. currently happening as part of the blacklist
         base_parsings = self.m.parse(base_form)
@@ -320,3 +330,7 @@ class Numbers:
         )
         new_best_parse._morph = parse._morph
         return new_best_parse
+
+    @staticmethod
+    def _is_multi_word(word:str)->bool:
+        return len(word.split())>1
