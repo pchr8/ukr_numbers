@@ -27,3 +27,6 @@ filterwarnings = [
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+ukr_num = "ukr_numbers.__main__:main"

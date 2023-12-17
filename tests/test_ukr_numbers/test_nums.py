@@ -13,7 +13,6 @@ def test_nums_edge():
     assert n.convert_to_auto(2, "один") == "два"
 
 
-#  @pytest.mark.now
 def test_nums_fails():
     n = Numbers(graceful_failure=False)
     with pytest.raises(ValueError):
@@ -34,6 +33,18 @@ def test_nums_fails():
     assert n.convert_to_auto(2, "десятка") == "2"
 
     assert n.convert_to_auto(2, 232) == "2"
+
+def test_nums_two():
+    n = Numbers(graceful_failure=False)
+    assert n.convert_to_auto(22, "другий") == "двадцять другий"
+    assert n.convert_to_auto(22, "два") ==  "двадцять два"
+
+
+@pytest.mark.skip(reason="two-digit support missing")
+def test_nums_known_bad():
+    n = Numbers(graceful_failure=False)
+    assert n.convert_to_auto(23, "два") ==  "двадцять три"
+    assert n.convert_to_auto(28, "два") ==  "двадцять восьмий"
 
 
 @pytest.mark.skip("TODO: find a case where this actually happens")
