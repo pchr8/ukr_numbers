@@ -1,0 +1,29 @@
+[tool.poetry]
+name = "ukr-numbers"
+version = "0.1.0"
+description = "Converts numbers (3) to Ukrainian words (третій/три/третьому/третьої) in the correct inflection"
+authors = ["SH <serhii@serhii.net>"]
+readme = "README.md"
+packages = [{include = "ukr_numbers", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+pymorphy2 = "^0.9.1"
+pymorphy2-dicts-uk = "^2.4.1.1.1460299261"
+num2words = "^0.5.13"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.3"
+pdbpp = "^0.10.3"
+
+[tool.pytest.ini_options]
+markers = [
+  "now: ",
+]
+filterwarnings = [
+	'ignore:inspect.getargspec'
+]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
