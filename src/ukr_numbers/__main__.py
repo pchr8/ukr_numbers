@@ -1,13 +1,16 @@
-from ukr_numbers import Numbers
 import argparse
 import logging
+import sys, traceback, pdb
+
+
+from ukr_numbers import Numbers
 
 logging.basicConfig()
 
 
 def run(args):
     n = Numbers()
-    res = n.convert_to_auto(n=args.number, desc=args.inflection)
+    res = n.convert_to_auto(n=args.number, target_inflection=args.inflection)
     print(res)
 
 
