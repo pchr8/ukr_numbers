@@ -2,55 +2,74 @@
 > [!WARNING]  
 > This is a side project, currently pre-alpha. Sometimes it WILL be wrong, especially for longer numbers. You have been warned.
 
-## What?
+## Basics
+### What?
 Convert int numbers (like "3") to (Ukrainian-language) words in 
 a specific declination (третій/три/третьому/третьої).
 
-The declination is given using natural language, that is you can decline any
-simple number and it'll be used as example. E.g. if you want your 3/4 to 
-become a "третьому"/"четвертому", you can enter "першому" as description. 
+The target declination is given using natural language, that is: decline any
+simple number to the declination you need and it'll be used as example/blueprint. 
 
-I find this easier than to remember whether you need an ordinal or not and 
-what's the correct spelling of the name of the case for the result. 
+FOR EXAMPLE, if you need "1->в першому вагоні", "2->в другому вагоні", "-1->в останньому вагоні", 
+you can just enter "першому"  as your target declension, and all your integers
+will be transformed to ordinals in the dative case.
+
+### Why?
+#### Declension target as natural language
+1. I find this easier than remembering the names of everything for an explicit target declension (is it ordinal or cardinal? do I write `dative` or `datv`? ..)
+2. Automatic templating! I use this package to replace numbers in strings with other numbers without the need to explicitly parse each one!
+#### My own unsolved problem
+Even without the natural language target bit, I found no packages that 
+could convert integers to natural language _while handling both cardinals and ordinals in different (grammatical) cases 
+and agreed to different numbers and genders_.
 
 ## Examples
+```python
+>>> from ukr_numbers import Numbers
+>>> Numbers().convert_to_auto(231300,"другий")
+WARNING:ukr_numbers.nums:Support for multi-word numbers (231300) is bad, errors are likely to happen, you're warned.
+'двістітридцятьоднатисячатрьохсотий'
+```
+
 ```bash
-poetry run python3 -m ukr_numbers 8 два
+python3 -m ukr_numbers 8 два
 вісім
-poetry run python3 -m ukr_numbers 8 другої
+python3 -m ukr_numbers 8 другої
 восьмої
-poetry run python3 -m ukr_numbers 8 другому
-восьмому
-poetry run python3 -m ukr_numbers 10 друге
-десяте
-```
 
-`-1` is a special number denoting "last":
-```bash
-poetry run python3 -m ukr_numbers -1 два  #! can't decline it into a number
+# `-1` is a special number denoting "last":
+python3 -m ukr_numbers -1 два  #! can't decline it into a number
 None
-poetry run python3 -m ukr_numbers -1 другої
+python3 -m ukr_numbers -1 другої
 останньої
-poetry run python3 -m ukr_numbers -1 другому
-останньому
-poetry run python3 -m ukr_numbers -1 друге
-останнє
+
+python3 -m ukr_numbers 124 першою
+WARNING:ukr_numbers.nums:Support for multi-word numbers (124) is bad, errors are likely to happen, you're warned.
+сто двадцять четвертою
+
+python3 -m ukr_numbers -124 першою
+WARNING:ukr_numbers.nums:Support for multi-word numbers (-124) is bad, errors are likely to happen, you're warned.
+мінус сто двадцять четвертою
 ```
 
-## Unsupported
-- Nouns, like 'десятка', 'десяток'
-- negative numbers, (except -1/last)
-- numbers that take multiple words in Ukrainian (23 -> (currently) двадцят три)
-	- they sometimes work, sometimes don't.
-	- will be the next feature I'll look into
-
-## Errors 
+## Errors handling
 - if "останній"/last can't be inflected in the required way,
 	(e.g. "перший"->"останній" is OK, "один"->??? isn't)
 	None will be returned.
-- if anything goes wrong and graceful_failure is enabled,
+- if anything goes wrong and `graceful_failure` is enabled,
 	in the worst case scenario the number itself will be
 	returned as string (2 ->'2')
+
+## Drawbacks
+### Explicitly unsupported
+- Nouns, like 'десятка', 'десяток'
+- Fractions (дві з половиною тисячі)
+
+### Known bugs
+- Numbers that take multiple words in Ukrainian (23 ->  двадцять три) now have weak support, but..
+- numbers composed of multiple words in certain _cases_ (pun intended) are only partially correct
+	- e.g. (currently) 2000000 двома -> два мільйонами, not _двома_ мільйонами
+- **Please write tickets for edge cases you find!**
 
 ## Similar projects
 Both used in this package:
@@ -59,4 +78,4 @@ Both used in this package:
 	- can do inflection by case and partly by gender
 	- can't do inflections together with ordinals
 	- can't do adjectives (на ПЕРШОМУ місці)
-- [pymorphy2](https://github.com/pymorphy2/pymorphy2) does inflection
+- [pymorphy2](https://github.com/pymorphy2/pymorphy2) does inflection on natural words 
