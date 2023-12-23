@@ -21,6 +21,7 @@ logging.basicConfig()
 logger = logging.getLogger(__name__)
 b = breakpoint
 
+
 class Numbers:
     """Logic for inflecting numbers in Ukrainian.
 
@@ -134,10 +135,12 @@ class Numbers:
             n=None if self.negative_one_is_last and n == -1 else n
         )
 
-        if meta.n > 1_000_000_000_000:
+        if meta.n and meta.n > 1_000_000_000_000:
             raise ValueError(f"Nums larger than a trillion unsupported: {n}")
         if meta.is_multi_word:
-            logger.warning(f"Support for multi-word numbers ({n}) is bad, errors are likely to happen, you're warned.")
+            logger.warning(
+                f"Support for multi-word numbers ({n}) is bad, errors are likely to happen, you're warned."
+            )
 
         target_inflection = str(target_inflection)
 
