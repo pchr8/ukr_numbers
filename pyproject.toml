@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "ukr-numbers"
-version = "0.1.0"
+version = "0.1.1"
 description = "Converts numbers (3) to Ukrainian words (третій/три/третьому/третьої) in the correct inflection"
 authors = ["SH <serhii@serhii.net>"]
 readme = "README.md"
