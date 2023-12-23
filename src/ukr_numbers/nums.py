@@ -1,50 +1,55 @@
 import logging
+
 from num2words import num2words
 
 from pymorphy2 import MorphAnalyzer
 from pymorphy2.tagset import OpencorporaTag
 from pymorphy2.analyzer import Parse
 
-from typing import Optional, Iterable
 from collections import Counter
+from dataclasses import dataclass
+from enum import Enum
+
+from ukr_numbers.data_structures import NumSuffixes, NumberMetadata
+
+from typing import Optional, Iterable
+
+from pprint import pprint, pformat
+
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
 b = breakpoint
 
-
 class Numbers:
-    """Logic for inflecting numbers.
-
-    Supports only Ukrainian language.
+    """Logic for inflecting numbers in Ukrainian.
 
     Main feature:
         in:
-            - a number,  like 4
-                - If enabled, "-1" can be made to mean "last"
+            - a number, like 4 (or -1 for negatives if enabled)
             - the inflection you need, GIVEN AS TEXT (e.g. "перший")
-                (any simple one-word number will do)
+                (=inflect any simple number to the inflection you want)
         out:
-            the number inflected like the word given, like "червертий"
+            the number inflected like the word given, like
+                - "червертий"
+                - "мінус чотирнадцятисячному"
 
     DEALING WITH ERRORS:
         - if "останній"/last can't be inflected in the required way,
             (e.g. "перший"->"останній" is OK, "один"->??? isn't)
             None will be returned.
-        - if anything goes wrong and graceful_failure is enabled,
-            in the worst case scenario the number itself will be
-            returned as string (2 ->'2')
+        - worst case scenario the number will be returned as string (2 ->'2')
 
     UNSUPPORTED:
+        - multi-word numbers have a high chance of being wrong
         - Nouns, like 'десятка', 'десяток'
-        - negative numbers, (again, except -1/last)
-        - numbers that take multiple words in Ukrainian (23 -> двадцят три) 
-            they sometimes work, sometimes don't.
+        - Fractions ('три з половиною тисячі')
+        - Nums larger than a trillion
 
-    FAILURE CASES:
-    - mainly ones where pymorphy2 has issues, e.g.
-        - пʼятьмастами, семимастами etc. (normal form detected as 'семимаст')
-
+    FAIL CASES:
+        - два мільйонА/мільйонИ - TODO not sure what is right
+        - complex cases from https://ukr-lifehacks.ed-era.com/rozdil-9/vidminuvannya_chuslivnukiv (TODO document)
+            - esp. ДВОМА мільйонами
     """
 
     # Declensions with these parts of speech will be avoided always
@@ -54,161 +59,245 @@ class Numbers:
         "VERB",  # три
     ]
     # Will prefer Parsings with these POS
-    # TODO figure a common system, if this is set POS_BLACKLIST is not needed
+    # TODO with this can I remove POS_BLACKLIST?
     POS_WHITELIST = ["ADJF", "NUMR"]
+
     # Grammemes that will be discarded when picking the correct-est Parse
     GRAMMEMES_TO_DISCARD = "compb"
 
     def __init__(
-        self, negative_one_is_last: bool = True, graceful_failure: bool = False
+        self,
+        negative_one_is_last: bool = True,
+        graceful_failure: bool = False,
+        quiet=False,
     ):
-        self.m = MorphAnalyzer(lang="uk")
-        self.graceful = graceful_failure
-        self.negative_one_is_last = negative_one_is_last
-        self.debug_mode = False
+        """
 
-    def fail_or_log(self, msg: str, exc=ValueError) -> None:
+        Args:
+            negative_one_is_last (bool): if True, will interpret -1 as 'last'
+                but disable support for negative numbers
+            graceful_failure (bool): recover from errors where possible by
+                returning str(int) and logging instead of raising exception
+            quiet: whether recoverable exceptions should be logged
+                as warning or debugs
+        """
+        self.negative_one_is_last = negative_one_is_last
+
+        self.m = MorphAnalyzer(lang="uk")
+
+        self.graceful = graceful_failure
+        self.quiet = quiet
+
+        # TODO remove in 'prod' :P
+        # If debug_mode is True, self.b() will drop into a pdb shell
+        self.debug_mode = True
+        self.b = b if self.debug_mode else int
+
+    def _fail_or_log(self, msg: str, exc=ValueError) -> None:
+        """if graceful, log instead of raising. If quiet, use loglevel debug instead of warning."""
         if self.graceful:
-            logger.warning(msg)
+            if self.quiet:
+                logger.debug(msg)
+            else:
+                logger.warning(msg)
         else:
             raise exc(msg)
 
     def convert_to_auto(
-        self, n: int, desc: str, known_grammemes: Optional[Iterable[str]] = None
+        self,
+        n: int,
+        target_inflection: str,
+        #  known_grammemes: Optional[Iterable[str]] = None,
     ) -> Optional[str]:
-        """Convert the number n into a string inflected the same way as `desc`.
+        """Convert the number n into a string inflected the same way as `target_inflection`.
 
         For example:
-            n=2, desc="тридцятьма" -> "двома"
-            n=10, desc="першому" -> "десятому"
-            ! n=-1, desc="першому" -> "останньому"
-            !! n=-1, desc="один" -> None
+            n=2, ti="тридцятьма" -> "двома"
+            n=10, ti="першому" -> "десятому"
+            ! n=-1, ti="першому" -> "останньому"
+            !! n=-1, ti="один" -> None
 
         Both numerals (один) and ordinals (перший) are supported.
             Ordinals for -1 return None if -1 is enabled.
             This is the only case where None will be returned.
 
-        If inflection should work but doesn't, graceful fallback
-            to str(n) happens.
-
         Args:
             n (int): n an integer number
                 !! n==-1 is special and means "last"
-            desc (str): a Ukrainian numeral or ordinal in the needed inflection
-
-            known_grammemes (Optional[Iterable[str]]): if `desc` can be
-                understood in multiple ways, provide pymorphy2 grammemes
-                that will be used to choose the correct parsing out of multiple.
-
-                E.g. "перший" can be seen as:
-                    [OpencorporaTag('ADJF,compb masc,nomn'),
-                     OpencorporaTag('ADJF,compb masc,accs'),
-                     OpencorporaTag('ADJF,compb masc,voct')]
-
-                If HYPOTHETICALLY the different parsings have a different
-                normal form, this can be used to pick the correct one.
-                (e.g. "I want my 'перший' to be parsed as accusative").
-
-                ~~I have not yet found any numbers where this actually matters.~~
-                https://chat.openai.com/share/6d4f65d6-0bcc-40a6-bae0-dfb397f19a4f
-                    Десяток!
-                        ["tags: 'NOUN,inan femn,nomn' normal_form:десятка",
-                         "tags: 'NOUN,inan masc,gent' normal_form:десяток"]
-                But nouns are explicitly not supported.
-
+            ti (str): a Ukrainian numeral or ordinal in the needed inflection
 
         Returns:
             str: n as str in the hopefully correct inflection
         """
 
-        if n < 0 if not self.negative_one_is_last else n < -1:
-            raise ValueError(f"Negative numbers unsupported: {n}")
+        meta = NumberMetadata.from_number(
+            n=None if self.negative_one_is_last and n == -1 else n
+        )
 
-        desc = str(desc)
+        if meta.n > 1_000_000_000_000:
+            raise ValueError(f"Nums larger than a trillion unsupported: {n}")
+        if meta.is_multi_word:
+            logger.warning(f"Support for multi-word numbers ({n}) is bad, errors are likely to happen, you're warned.")
 
-        if self._is_multi_word(desc):
-            raise ValueError(f"Please use a simple (<10, one-word) number for your target declension.")
+        target_inflection = str(target_inflection)
 
-        # Get pymorphy2 list of parsings of desc
-        parsings = self.m.parse(desc)
-        # Pick the best one of them
-        best = self.filter_by_grammemes(
-            parsings=parsings,
-            known=known_grammemes,
+        if target_inflection.isdigit():
+            return str(n)
+
+        if len(target_inflection.split(" ")) > 1:
+            # same: тисяча, мільйон are parsed as nouns
+            raise ValueError(
+                f"Please use a simple (<10, one-word) number for your target declension."
+            )
+
+        # Get pymorphy2 list of parsings of target_inflection
+        parsings_target = self.m.parse(target_inflection)
+        logger.debug(f"Target parsings options: {pformat(parsings_target)}")
+
+        # Pick the best one
+        t_parse = self.filter_by_grammemes(
+            parsings=parsings_target,
+            #  known=known_grammemes,
             pos_blacklist=Numbers.POS_BLACKLIST,
             pos_whitelist=Numbers.POS_WHITELIST,
         )
+        logger.debug(f"Best target parsing: {t_parse}")
 
-        # TODO bug? in pymorphy where singular is not annotated
-        #   we add it ourselves
-        best = self._add_sing_to_parse(best)
+        t_pos = t_parse.tag.POS
+        t_grammemes = t_parse.tag.grammemes
 
-        parsing = best
-        pos = parsing.tag.POS
-        grammemes = parsing.tag.grammemes
-        if "UNKN" in grammemes:
-            self.fail_or_log(
-                f"Can't do {n} {desc} {known_grammemes} because parsing is unknown: {parsing}"
-            )
-            return str(n)
-        if "LATN" in grammemes:
-            self.fail_or_log(f"Currently only Ukrainian is supported, not latin {desc}")
-            return str(n)
-        if "NOUN" in grammemes:
-            self.fail_or_log(f"Nouns (~десяток) are unsupported. {desc=}, {grammemes=}")
-            return str(n)
+        ######
+        # EASY CASES
+        ######
 
-        if "NUMB" in grammemes:
-            # If we got a number like '2', return the n as-is
-            return str(n)
+        # Deal with cases where target_inflection is imperfect
+        grams_map = {
+            "NUMB": None,
+            "UNKNOWN": f"Can't do {n}->{target_inflection}  because target parsing is unknown: {t_parse}",
+            "LATN": f"Currently only Ukrainian is supported, not latin {target_inflection}",
+            "NOUN": f"Nouns (~десяток) are unsupported. {target_inflection=}, {t_grammemes=}",
+        }
+        for grm, msg in grams_map.items():
+            if grm in t_grammemes:
+                #  self._fail_or_log(msg.format(**locals()))  # format string
+                self._fail_or_log(msg)  # format string
+                return str(n)
 
-        if "ADJF" in grammemes:
+        ######
+        # GET BASE FORM (str, uninflected) OF SOURCE NUMBER
+        ######
+
+        if "ADJF" in t_grammemes:
             # We're dealing with an ordinal of some kind
             # тридцятий
-            if n == -1:
-                base_form = "останній"
+            logger.debug(
+                f"{target_inflection}'s an ordinal, because {t_parse} is ADJF: {t_parse=}"
+            )
+            meta.is_ordinal = True
+
+            if meta.is_last:
+                meta.complete_base_form = "останній"
             else:
-                base_form = self.to_ordinal(n)
-        elif "NUMR" in grammemes:
+                meta.complete_base_form = self.to_ordinal(meta.n)
+
+        elif "NUMR" in t_grammemes:
+            # cardinal numeral
             # тридцять
-            if n == -1 and self.negative_one_is_last:
+            logger.debug(
+                f"{target_inflection}'s a cardinal nr, because {t_parse} is NUMR: {t_parse=}"
+            )
+            meta.is_ordinal = False
+
+            # 'last' w/ cardinal doesn't exist
+            if meta.is_last:
+                logger.debug(
+                    f"Number is 'last' and target is a cardinal, inflection impossible. (перший->останній, один->???)"
+                )
                 return None
-            else:
-                # TODO in this case we can do num2words(.., case="accusative")
-                base_form = self.to_number(n)
+
+            # NB this automatically sets meta.beginning_of_number
+            # "сто тисяч вісім" -> bon = "сто тисяч", base_form = "вісім"
+            meta.complete_base_form = self.to_number(meta.n)
+
+            logger.debug(f"Got NUMR ({t_grammemes}) for {t_parse} ({n=})")
+
         else:
-            self.fail_or_log(
-                f"Neither ADJF nor NUMR in grammemes {grammemes} for {parsing=} of {n=} {desc=} {known_grammemes=}"
+            self._fail_or_log(
+                f"Neither ADJF nor NUMR in grammemes {t_grammemes} for {t_parse=} of {n=} {target_inflection=} "
             )
             return str(n)
 
-        if self._is_multi_word(base_form):
-            # TODO implement some kind of support
-            logger.error(f"Numbers with multiple words are unsupported, result will likely be wrong!")
+        ######
+        # INFLECT BASE FORM
+        ######
+        logger.debug(f"Base form: {meta.base_form}")
+        logger.debug(meta)
+
+        word_end_form = meta.base_form
 
         # filtering for VERB (три) etc. currently happening as part of the blacklist
-        base_parsings = self.m.parse(base_form)
-        base_parsed = self.filter_by_grammemes(
-            parsings=base_parsings,
+        bf_parsings = self.m.parse(word_end_form)
+
+        bf_parse = self.filter_by_grammemes(
+            parsings=bf_parsings,
             pos_blacklist=Numbers.POS_BLACKLIST,
             pos_whitelist=Numbers.POS_WHITELIST,
+            #  known=known,
         )
-        base_parsed = self._add_sing_to_parse(base_parsed)
 
-        clean_grammemes = self._remove_bad_grammemes(
-            grammemes, bad_grammemes=Numbers.GRAMMEMES_TO_DISCARD
+        clean_t_grammemes = self._remove_bad_grammemes(
+            t_grammemes, bad_grammemes=Numbers.GRAMMEMES_TO_DISCARD
         )
-        #  base_inflected = base_parsed.inflect(clean_grammemes)
-        base_inflected = self._inflect(base_parsed, clean_grammemes)
-        if not base_inflected:
-            logger.warning(
-                f"Something went wrong when inflecting {base_parsed} -> {clean_grammemes} to match {desc}, falling back"
+
+        bf_inflected = self._inflect(bf_parse, clean_t_grammemes)
+
+        if not meta.is_ordinal and meta.num_zeroes_at_the_end in NumSuffixes.values():
+            # If number is thousand/million/... (suffixes) make sure it agrees
+            #   with however many millions there are.
+            #   один мільйоН, два мільйонА(и?)
+            num_before_zeroes = int(str(meta.n)[-meta.num_zeroes_at_the_end - 1])
+            hr_pref_inflected = self._make_agree_with_number(
+                bf_inflected, num_before_zeroes
             )
-            if self.debug_mode:
-                b()
+            bf_inflected = hr_pref_inflected
+
+        if not bf_inflected:
+            logger.warning(
+                f"Something went wrong when inflecting {bf_parse} -> {clean_t_grammemes} to match {target_inflection}, falling back"
+            )
+            self.b()
             return str(n)
-        res = base_inflected.word
-        return res
+
+        res = meta.beginning_of_number
+        if res:
+            res += " "
+        res += bf_inflected.word
+        res_fixed = self.fix_edge_cases(inflected_num=res, meta=meta)
+        #  self.b()
+
+        return res_fixed
+
+    @staticmethod
+    def fix_edge_cases(inflected_num: str, meta: NumberMetadata):
+        # Write without spaces ordinals ending in certain suffixes
+        """
+        https://dyskurs.net/skladni-chyslivnyky/ каже, що разом пишемо...
+        > складні порядкові числівники, останнім компонентом яких є -сотий, -тисячний, -мільйонний, -мільярдний: дев’ятисо́тий, трьохсо́тий; двохтúсячний, десятитúсячний, п’ятсоттридцятити́сячний; чотирьохмільйо́нний, п’ятдесятимільйóнний, шістдесятип’ятимільйо́нний; семимілья́рдний, трьохмілья́рдний.
+        """
+        if meta.is_ordinal:
+            # num2word seems to take care of this except for one hundred
+            # TODO - bug report to them if my understanding of the rule is right?
+            if (
+                meta.num_zeroes_at_the_end
+                == 2
+                #  or meta.num_zeroes_at_the_end in NumSuffixes.values()
+            ):
+                inflected_num = inflected_num.replace(" ", "")
+
+        # Handle negative numbers
+        if meta.is_negative:
+            inflected_num = f"мінус {inflected_num}"
+        return inflected_num
 
     @staticmethod
     def to_number(n: int) -> str:
@@ -228,18 +317,28 @@ class Numbers:
         known: Optional[Iterable[str]] = None,
         pos_blacklist=None,
         pos_whitelist=None,
-    ):
-        """filter_by_grammemes.
+    ) -> Parse:
+        """Given a list of parsings, pick the 'best' one.
 
-        Very often you can't differentiate masc/neut and case
-         m.parse("першому")
-            [Parse(word='першому', tag=OpencorporaTag('ADJF,compb masc,datv'), normal_form='перший', score=1.0, methods_stack=((DictionaryAnalyzer(), 'першому', 76, 2),)),
-             Parse(word='першому', tag=OpencorporaTag('ADJF,compb masc,loct'), normal_form='перший', score=1.0, methods_stack=((DictionaryAnalyzer(), 'першому', 76, 7),)),
-             Parse(word='першому', tag=OpencorporaTag('ADJF,compb neut,datv'), normal_form='перший', score=1.0, methods_stack=((DictionaryAnalyzer(), 'першому', 76, 18),)),
-             Parse(word='першому', tag=OpencorporaTag('ADJF,compb neut,loct'), normal_form='перший', score=1.0, methods_stack=((DictionaryAnalyzer(), 'першому', 76, 22),))]
+        Will try to pick a parsings from the whitelist POS, to not pick
+        any from blacklist, and to prefer ones where the grammemes
+        match the ones passed in `known`.
 
-        BUT that doesn't seem to matter anyway, because I can't find any number where it changes the normal form
-            (=  {x.normal_form for x in self.m.parse("півторма")} has more than one result)
+        Use case - multiple interpretations of your word but you know
+        something about its morphology.
+
+        E.g. тисячі can be
+            - "немає однієї тисячі гривень" (femn, genitive, SINGULAR)
+            -"в мене три тисячі собак" (masc, plur, masc)
+
+        Args:
+            parsings (list): list of pymorphy2 Parse objects from which to pick
+            known (Optional[Iterable[str]]): list of grammemes should be in the parsing
+            pos_blacklist: POS of this type won't be picked if possible
+            pos_whitelist: POS of this type will be picked if possible.
+
+        Returns:
+            Parse:
         """
         # If we have a whitelist and we have parsings matching it, restrict
         #   the list to them.
@@ -292,7 +391,11 @@ class Numbers:
     @staticmethod
     def _inflect(parse: Parse, new_grammemes: set | frozenset) -> Parse:
         """Sometimes inflecting with the entire batch fails, but one by one
-        works. This chains the grammemes for one inflection at a time."""
+        works. This chains the grammemes for one inflection at a time.
+
+        This is a workaround for a pymorphy bug:
+        https://github.com/pymorphy2/pymorphy2/issues/169
+        """
         new_parse = parse
         for g in new_grammemes:
             if new_parse.inflect({g}):
@@ -303,6 +406,20 @@ class Numbers:
 
     @staticmethod
     def _make_agree_with_number(parse: Parse, n: int) -> Parse:
+        """Inflect `parse` to agree in number with `n`.
+        (Like singular/plural, except 2-4 and5 5+ are separate in Ukrainian)
+
+        Fix for pymorphy bug its function for this.
+        Pymorphy bug: https://github.com/pymorphy2/pymorphy2/issues/169
+
+
+        Args:
+            parse (Parse): parse object to inflect to match number
+            n (int): n number to agree on.
+
+        Returns:
+            Parse:
+        """
         grams = parse.tag.numeral_agreement_grammemes(n)
         new_parse = Numbers._inflect(parse=parse, new_grammemes=grams)
         return new_parse
@@ -312,6 +429,8 @@ class Numbers:
         """
         pymorphy sometimes doesn't add singular for ukrainian
         (and fails when needs to inflect it to plural etc.)
+
+        Bug: https://github.com/pymorphy2/pymorphy2/issues/169
 
         this creates a new Parse with that added.
         """
@@ -330,7 +449,3 @@ class Numbers:
         )
         new_best_parse._morph = parse._morph
         return new_best_parse
-
-    @staticmethod
-    def _is_multi_word(word:str)->bool:
-        return len(word.split())>1
