@@ -1,8 +1,7 @@
 # ukr_numbers
 > [!WARNING]  
-> This is a side project. Sometimes it WILL be wrong, especially for longer numbers. You have been warned.
+> This is a side project. Sometimes it WILL be wrong, especially for longer numbers. Bug reports and PRs very welcome!
  
-→
 ## Basics
 ### What?
 Convert int numbers (`3`) to (Ukrainian-language) words in 
@@ -49,29 +48,33 @@ python3 -m ukr_numbers -1 другої
 останньої
 
 python3 -m ukr_numbers 124 першою
-WARNING:ukr_numbers.nums:Support for multi-word numbers (124) is bad, errors are likely to happen, you're warned.
+WARNING:ukr_numbers.nums:Multi-word numbers (124) are unsupported, results may be wrong.
 сто двадцять четвертою
 
 python3 -m ukr_numbers -124 першою
-WARNING:ukr_numbers.nums:Support for multi-word numbers (-124) is bad, errors are likely to happen, you're warned.
+WARNING:ukr_numbers.nums:Multi-word numbers (-124) are unsupported, results may be wrong.
 мінус сто двадцять четвертою
+
+python3 -m ukr_numbers -1 першою
+WARNING:ukr_numbers.nums:Multi-word numbers (124) are unsupported, results may be wrong.
+останньою
 ```
 
 ## Errors handling
-- if "останній"/last can't be inflected in the required way,
+- if _останній_/last can't be inflected in the required way,
 	(e.g. "перший"→"останній" is OK, "один"→??? isn't)
 	None will be returned.
 - if anything goes wrong and `graceful_failure` is enabled,
 	in the worst case scenario the number itself will be
-	returned as string (2 →'2')
+	returned as string (2 →`'2'`)
 
 ## Drawbacks
 ### Explicitly unsupported
-- Nouns, like _десятка, десяток_
+- Nouns (_десятка, десяток_)
 - Fractions (_дві з половиною тисячі_)
 
 ### Known bugs
-- Numbers that take multiple words in Ukrainian (23 →  двадцять три) now have weak support, but..
+Numbers that take multiple words in Ukrainian (23 →  _двадцять три_) now have weak support, except:
 - numbers composed of multiple words in certain _cases_ (pun intended) are only partially correct
 	- e.g. (currently) 2000000+двома → два мільйонами, not _двома_ мільйонами
 - **Please write tickets for edge cases you find!**

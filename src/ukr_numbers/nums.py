@@ -139,7 +139,7 @@ class Numbers:
             raise ValueError(f"Nums larger than a trillion unsupported: {n}")
         if meta.is_multi_word:
             logger.warning(
-                f"Support for multi-word numbers ({n}) is bad, errors are likely to happen, you're warned."
+                f"Multi-word numbers ({n}) are unsupported, the result is likely wrong."
             )
 
         target_inflection = str(target_inflection)
