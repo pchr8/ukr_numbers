@@ -2,9 +2,9 @@ import logging
 
 from num2words import num2words
 
-from pymorphy2 import MorphAnalyzer
-from pymorphy2.tagset import OpencorporaTag
-from pymorphy2.analyzer import Parse
+from pymorphy3 import MorphAnalyzer
+from pymorphy3.tagset import OpencorporaTag
+from pymorphy3.analyzer import Parse
 
 from collections import Counter
 from dataclasses import dataclass
